@@ -334,7 +334,7 @@ defmodule MarcoPolo.Protocol.RecordSerialization do
     |> Stream.map(fn({name, value}) -> encode_field_for_header(name, 0, value) end)
     |> Stream.map(&IO.iodata_length/1)
     |> Enum.sum
-    |> +(1)
+    |> Kernel.+(1)
   end
 
   defp encode_embedded(%Document{class: class, fields: fields}, offset) do
@@ -372,6 +372,7 @@ defmodule MarcoPolo.Protocol.RecordSerialization do
 
   defp encode_type(value, type, offset)
 
+  defp encode_type(nil, :boolean, _offset),  do: <<0>>
   defp encode_type(true, :boolean, _offset),  do: <<1>>
   defp encode_type(false, :boolean, _offset), do: <<0>>
 
