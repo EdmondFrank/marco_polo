@@ -14,6 +14,7 @@ defmodule MarcoPolo.Protocol.RecordSerializationTest do
                       0,           # end of (empty) header
                       >>
 
+  # A string containing the name of the class of the record. If the record has no class, class-name will be just an empty string.
   @record_no_fields_null_class <<0, # version
                                  0, # -1 with zigzag
                                  0, # end of (empty) header
@@ -59,7 +60,7 @@ defmodule MarcoPolo.Protocol.RecordSerializationTest do
 
   test "decode/2: record with no fields and null class" do
     assert Ser.decode(@record_no_fields_null_class) ==
-           %Document{class: nil}
+           %Document{class: ""}
   end
 
   test "decode/2: record with fields" do

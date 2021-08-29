@@ -10,7 +10,7 @@ Add MarcoPolo as a dependency of your application inside your `mix.exs` file:
 
 ```elixir
 def deps do
-  [{:marco_polo, "~> 0.1"}]
+  [{:marco_polo, git: "https://github.com/EdmondFrank/marco_polo.git"}]
 end
 ```
 

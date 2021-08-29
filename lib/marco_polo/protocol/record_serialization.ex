@@ -352,10 +352,7 @@ defmodule MarcoPolo.Protocol.RecordSerialization do
     type = infer_type(value)
     name = to_string(name)
 
-    if is_nil(value) do
-      ptr = 0
-      type = :boolean
-    end
+    {ptr, type} = if is_nil(value), do: {0, :boolean}, else: {ptr, type}
 
     [encode_value(name), <<ptr :: 32-signed>>, type_to_int(type)]
   end
@@ -428,6 +425,7 @@ defmodule MarcoPolo.Protocol.RecordSerialization do
                encode_value(to_string(key)),
                <<0 :: 32-signed>>,
                0]
+        {[key|ks], [encoded_value|vs], index}
       else
         key = [type_to_int(:string),
                encode_value(to_string(key)),
@@ -435,9 +433,8 @@ defmodule MarcoPolo.Protocol.RecordSerialization do
                type_to_int(infer_type(value))]
         encoded_value = encode_value(value, index)
         index = index + IO.iodata_length(encoded_value)
+        {[to_string(key)|ks], [encoded_value|vs], index}
       end
-
-      {[key|ks], [encoded_value|vs], index}
     end
 
     keys   = Enum.reverse(keys)

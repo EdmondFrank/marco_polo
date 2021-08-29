@@ -71,25 +71,25 @@ unless :integration in ExUnit.configuration[:exclude] do
 
   run_script.("""
   SET ignoreErrors true;
-  DROP DATABASE remote:localhost/MarcoPoloTest root root;
-  DROP DATABASE remote:localhost/MarcoPoloTestGenerated root root;
-  DROP DATABASE remote:localhost/MarcoPoloToDrop root root;
+  DROP DATABASE remote:localhost/MarcoPoloTest root admin;
+  DROP DATABASE remote:localhost/MarcoPoloTestGenerated root admin;
+  DROP DATABASE remote:localhost/MarcoPoloToDrop root admin;
   SET ignoreErrors false;
 
-  CREATE DATABASE remote:localhost/MarcoPoloTest root root plocal;
-  CREATE DATABASE remote:localhost/MarcoPoloToDrop root root memory;
+  CREATE DATABASE remote:localhost/MarcoPoloTest root admin plocal;
+  CREATE DATABASE remote:localhost/MarcoPoloToDrop root admin memory;
   """)
 
   output = run_script.("""
   CONNECT remote:localhost/MarcoPoloTest admin admin;
-  CREATE CLUSTER schemaless;
-  CREATE CLASS Schemaless CLUSTER schemaless;
+  CREATE CLUSTER schemaless ID 200;
+  CREATE CLASS Schemaless CLUSTER 200;
   """)
 
   clusters = [{"schemaless", extract_cluster_id.(output)}|clusters]
 
   output = run_script.("""
-  CONNECT remote:localhost/MarcoPoloTest admin admin;
+  CONNECT remote:localhost/MarcoPoloTest root admin;
   CREATE CLUSTER schemaful;
   CREATE CLASS Schemaful;
   CREATE PROPERTY Schemaful.myString STRING;

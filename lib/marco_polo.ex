@@ -716,12 +716,12 @@ defmodule MarcoPolo do
   defp encode_query_with_type(:sql_command, query, opts) do
     args = [query]
 
-    if params = opts[:params] do
+    args = if params = opts[:params] do
       params = %Document{class: nil, fields: %{"parameters" => to_params(params)}}
       # `true` means "use simple parameters".
-      args = args ++ [true, params]
+      args ++ [true, params]
     else
-      args = args ++ [false]
+      args ++ [false]
     end
 
     args = args ++ [false]

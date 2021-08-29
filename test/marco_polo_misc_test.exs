@@ -226,9 +226,7 @@ defmodule MarcoPoloMiscTest do
       command(c, "CREATE PROPERTY UnknownPropertyIds.str STRING")
 
     {:ok, {rid2, _}} =
-      create_record(c,
-                    cluster_id,
-                    %Document{class: "UnknownPropertyIds", fields: %{"i" => 2, "str" => "value"}})
+      create_record(c, cluster_id, %Document{class: "UnknownPropertyIds", fields: %{"i" => 2, "str" => "value"}})
 
     assert {:ok, %{response: [doc1, doc2]}}
            = command(c, "SELECT FROM UnknownPropertyIds ORDER BY i ASC")

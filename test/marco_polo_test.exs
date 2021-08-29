@@ -70,7 +70,7 @@ defmodule MarcoPoloTest do
 
     test "drop_db/3 with a non-existing database", %{conn: c} do
       expected = {"com.orientechnologies.orient.core.exception.OStorageException",
-                  "Database with name 'Nonexistent' doesn't exits."}
+                  "Database with name 'Nonexistent' does not exist\r\n\tDB name=\"Nonexistent\""}
 
       assert {:error, %MarcoPolo.Error{} = err} = MarcoPolo.drop_db(c, "Nonexistent", :plocal)
       assert hd(err.errors) == expected
@@ -84,8 +84,8 @@ defmodule MarcoPoloTest do
     setup do
       {:ok, conn} = MarcoPolo.start_link(
         connection: {:db, "MarcoPoloTest", :document},
-        user: TestHelpers.user(),
-        password: TestHelpers.password()
+        user: "root",
+        password: "admin"
       )
 
       on_exit fn -> MarcoPolo.stop(conn) end
@@ -232,12 +232,12 @@ defmodule MarcoPoloTest do
     test "command/3: miscellaneous commands", %{conn: c} do
       import MarcoPolo, only: [command: 2, command: 3]
 
-      assert {:ok, %{}} = command(c, "CREATE CLUSTER misc_tests")
-      assert {:ok, %{}} = command(c, "CREATE CLASS MiscTests CLUSTER misc_tests")
+      assert {:ok, %{}} = command(c, "CREATE CLUSTER misc_tests ID 100")
+      assert {:ok, %{}} = command(c, "CREATE CLASS MiscTests CLUSTER 100")
       assert {:ok, %{}} = command(c, "CREATE PROPERTY MiscTests.foo DATETIME")
       assert {:ok, %{response: nil}} = command(c, "DROP PROPERTY MiscTests.foo")
       assert {:ok, %{response: true}} = command(c, "DROP CLASS MiscTests")
-      assert {:ok, %{response: true}} = command(c, "DROP CLUSTER misc_tests")
+      assert {:ok, %{response: true}} = command(c, "DROP CLUSTER 100")
       assert {:ok, %{response: false}} = command(c, "DROP CLUSTER misc_tests")
     end
 
