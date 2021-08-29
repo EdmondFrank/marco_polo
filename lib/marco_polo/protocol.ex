@@ -235,6 +235,15 @@ defmodule MarcoPolo.Protocol do
 
   defp parse_resp_contents(:db_drop, rest, _), do: {nil, rest}
 
+  defp parse_resp_contents(:db_list, data, _) do
+    case GP.parse(data, &decode_term(&1, :bytes)) do
+      {binary, rest} ->
+        {RecordSerialization.decode(binary), rest}
+      :incomplete ->
+        :incomplete
+    end
+  end
+
   defp parse_resp_contents(:db_size, data, _), do: decode_term(data, :long)
 
   defp parse_resp_contents(:db_countrecords, data, _), do: decode_term(data, :long)

@@ -153,6 +153,39 @@ defmodule MarcoPolo do
   end
 
   @doc """
+  Returns the list of the database to which `conn` is connected.
+
+  ## Options
+
+  This function accepts the following options:
+
+    * `:timeout` - operation timeout in milliseconds. If this timeout expires,
+      an exit signal will be sent to the calling process.
+
+  ## Examples
+
+      iex> MarcoPolo.db_list(conn)
+      {:ok,
+        %MarcoPolo.Document{
+          class: "",
+          fields: %{
+            "databases" => %{
+              "GratefulDeadConcerts" => "plocal:/databases/GratefulDeadConcerts",
+              "MarcoPoloTest" => "plocal:/databases/MarcoPoloTest",
+              "MarcoPoloTestGenerated" => "plocal:/databases/MarcoPoloTestGenerated",
+            }
+          },
+          rid: nil,
+          version: nil
+        }
+      }
+  """
+
+  def db_list(conn, opts \\ []) do
+    C.operation(conn, :db_list, [], opts)
+  end
+
+  @doc """
   Reloads the database to which `conn` is connected.
 
   This operation can only be performed on connections to a database. To learn

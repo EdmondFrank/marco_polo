@@ -270,6 +270,7 @@ defmodule MarcoPolo.Connection do
 
   @server_ops ~w(
     shutdown
+    db_list
     db_create
     db_exist
     db_drop
