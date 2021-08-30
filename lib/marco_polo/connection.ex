@@ -6,21 +6,37 @@ defmodule MarcoPolo.Connection do
   require Logger
 
   alias MarcoPolo.Connection.Auth
+  alias MarcoPolo.Connection.LiveQuery
   alias MarcoPolo.Protocol
   alias MarcoPolo.Document
   alias MarcoPolo.Error
+
+  @type state :: %{}
 
   @socket_opts [:binary, active: false, packet: :raw]
 
   @timeout 5000
 
   @initial_state %{
+    # The TCP socket to the OrientDB server
     socket: nil,
+    # The session id for the session held by this genserver
     session_id: nil,
+    # The queue of commands sent to the server
     queue: :queue.new,
+    # The schema of the OrientDB database (if we're connected to a db)
     schema: nil,
+    # The tail of binary data from parsing
     tail: "",
+    # A monothonically increasing transaction id (must be unique per session)
     transaction_id: 1,
+    # The options used to start this genserver
+    opts: nil,
+    # The protocol (version) that the server this genserver is connected to is
+    # using
+    protocol_version: nil,
+    # Dict of live query tokens to receiver pids
+    live_query_tokens: HashDict.new,
   }
 
   ## Client code.
@@ -35,11 +51,11 @@ defmodule MarcoPolo.Connection do
     # one is the list of options being passed to `Connection.start_link` (e.g.,
     # `:name` or `:timeout`).
     case Connection.start_link(__MODULE__, opts, opts) do
-      {:error, _} = err ->
-        err
       {:ok, pid} = res ->
         maybe_fetch_schema(pid, opts)
         res
+      {:error, _} = err ->
+        err
     end
   end
 
@@ -70,12 +86,20 @@ defmodule MarcoPolo.Connection do
     Connection.cast(pid, {:operation, op_name, args})
   end
 
+  def live_query(pid, args, receiver, opts) do
+    Connection.call(pid, {:live_query, args, receiver}, opts[:timeout] || @timeout)
+  end
+
+  def live_query_unsubscribe(pid, token) do
+    Connection.cast(pid, {:live_query_unsubscribe, token})
+  end
+
   @doc """
   Fetch the schema and store it into the state.
 
   Always returns `:ok` without waiting for the schema to be fetched.
   """
-  @spec fetch_schema(pid) :: :ok
+  @spec fetch_schema(pid) :: Dict.t
   def fetch_schema(pid) do
     Connection.call(pid, :fetch_schema)
   end
@@ -120,13 +144,8 @@ defmodule MarcoPolo.Connection do
   end
 
   @doc false
-  def disconnect(:stop, %{socket: nil} = s) do
+  def disconnect(:stop, s) do
     {:stop, :normal, s}
-  end
-
-  def disconnect(:stop, %{socket: socket} = s) do
-    :gen_tcp.close(socket)
-    {:stop, :normal, %{s | socket: nil}}
   end
 
   def disconnect(error, s) do
@@ -142,6 +161,8 @@ defmodule MarcoPolo.Connection do
   end
 
   @doc false
+  def handle_call(op, from, s)
+
   # No socket means there's no TCP connection, we can return an error to the
   # client.
   def handle_call(_call, _from, %{socket: nil} = s) do
@@ -158,45 +179,72 @@ defmodule MarcoPolo.Connection do
 
   def handle_call({:operation, op_name, args}, from, %{session_id: sid} = s) do
     check_op_is_allowed!(s, op_name)
+    check_op_with_version!(s.protocol_version, op_name)
 
-    req = Protocol.encode_op(op_name, [sid|args])
     s
     |> enqueue({from, op_name})
-    |> send_noreply(req)
+    |> send_noreply(Protocol.encode_op(op_name, [sid|args]))
   end
 
   def handle_call(:fetch_schema, from, %{session_id: sid} = s) do
     check_op_is_allowed!(s, :record_load)
 
     args = [sid, {:short, 0}, {:long, 1}, "*:-1", true, false]
-    req = Protocol.encode_op(:record_load, args)
 
     s
     |> enqueue({:fetch_schema, from})
-    |> send_noreply(req)
+    |> send_noreply(Protocol.encode_op(:record_load, args))
+  end
+
+  def handle_call({:live_query, args, receiver}, from, s) do
+    check_op_is_allowed!(s, :command)
+
+    s
+    |> enqueue({:live_query, from, receiver})
+    |> send_noreply(Protocol.encode_op(:command, [s.session_id|args]))
   end
 
   @doc false
+  def handle_cast(op, s)
+
   def handle_cast({:operation, op_name, args}, %{session_id: sid} = s) do
     check_op_is_allowed!(s, op_name)
 
-    req = Protocol.encode_op(op_name, [sid|args])
-    send_noreply(s, req)
+    send_noreply(s, Protocol.encode_op(op_name, [sid|args]))
   end
 
   def handle_cast(:stop, s) do
     {:disconnect, :stop, s}
   end
 
+  def handle_cast({:live_query_unsubscribe, token}, s) do
+    s = update_in(s.live_query_tokens, &Dict.delete(&1, token))
+    {:noreply, s}
+  end
+
   @doc false
+  def handle_info(msg, s)
+
   def handle_info({:tcp, socket, msg}, %{socket: socket} = s) do
     :inet.setopts(socket, active: :once)
-    s = dequeue_and_parse_resp(s, :queue.out(s.queue), s.tail <> msg)
+    data = s.tail <> msg
+
+    s =
+      if Protocol.live_query_data?(data) do
+        LiveQuery.forward_live_query_data(data, s)
+      else
+        dequeue_and_parse_resp(s, :queue.out(s.queue), data)
+      end
+
     {:noreply, s}
   end
 
   def handle_info({:tcp_closed, socket}, %{socket: socket} = s) do
     {:disconnect, {:error, :closed}, s}
+  end
+
+  def handle_info({:tcp_error, socket, reason}, %{socket: socket} = s) do
+    {:disconnect, {:error, reason}, s}
   end
 
   # Helper functions.
@@ -226,15 +274,13 @@ defmodule MarcoPolo.Connection do
 
   defp send_noreply(%{socket: socket} = s, req) do
     case :gen_tcp.send(socket, req) do
-      :ok ->
-        {:noreply, s}
-      {:error, _reason} = error ->
-        {:disconnect, error, s}
+      :ok                       -> {:noreply, s}
+      {:error, _reason} = error -> {:disconnect, error, s}
     end
   end
 
   defp enqueue(s, what) do
-    update_in s.queue, &:queue.in(what, &1)
+    update_in(s.queue, &:queue.in(what, &1))
   end
 
   defp dequeue_and_parse_resp(s, {{:value, {:fetch_schema, from}}, new_queue}, data) do
@@ -243,12 +289,28 @@ defmodule MarcoPolo.Connection do
     case Protocol.parse_resp(:record_load, data, s.schema) do
       :incomplete ->
         %{s | tail: data}
-      {^sid, {:error, _}, _rest} ->
-        raise "couldn't fetch schema"
+      {^sid, {:error, reason}, _rest} ->
+        raise Error, "couldn't fetch the schema because: #{inspect reason}"
       {^sid, {:ok, {schema, _linked_records}}, rest} ->
         schema = parse_schema(schema)
         Connection.reply(from, schema)
         %{s | schema: schema, tail: rest, queue: new_queue}
+    end
+  end
+
+  defp dequeue_and_parse_resp(s, {{:value, {:live_query, from, receiver}}, new_queue}, data) do
+    sid = s.session_id
+
+    case Protocol.parse_resp(:command, data, s.schema) do
+      {^sid, {:ok, resp}, rest} ->
+        token = LiveQuery.extract_token(resp)
+        Connection.reply(from, {:ok, token})
+        s
+        |> Map.put(:tail, rest)
+        |> Map.put(:queue, new_queue)
+        |> put_in([:live_query_tokens, token], receiver)
+      _ ->
+        dequeue_and_parse_resp(s, {{:value, {from, :command}}, new_queue}, data)
     end
   end
 
@@ -300,6 +362,23 @@ defmodule MarcoPolo.Connection do
 
   defp do_check_op_is_allowed!(_, _) do
     nil
+  end
+
+  @ops_with_versions %{
+    record_load_if_version_not_latest: 30,
+  }
+
+  for {op, min_version} <- @ops_with_versions do
+    defp check_op_with_version!(current, unquote(op)) when current < unquote(min_version) do
+      raise MarcoPolo.VersionError,
+        "operation #{unquote(op)} is not supported in" <>
+        " the current version of the OrientDB binary protocol," <>
+        " (#{current}), only starting with version #{unquote(min_version)}"
+    end
+  end
+
+  defp check_op_with_version!(_current, _op) do
+    :ok
   end
 
   defp next_transaction_id(s) do

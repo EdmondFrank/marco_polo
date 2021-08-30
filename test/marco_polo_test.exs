@@ -11,7 +11,7 @@ defmodule MarcoPoloTest do
     Logger.remove_backend(:console, flush: true)
     Process.flag :trap_exit, true
 
-    {:ok, pid} = MarcoPolo.start_link user: "foo", password: "foo", debug: {:log_to_file, "/dev/null"}
+    {:ok, pid} = MarcoPolo.start_link user: "foo", password: "foo"
 
     assert_receive {:EXIT, ^pid, {error, _}}
     assert Exception.message(error) =~ "key :connection not found"
@@ -30,6 +30,43 @@ defmodule MarcoPoloTest do
     assert Exception.message(error) == msg
 
     Logger.add_backend(:console, flush: true)
+  end
+
+  test "start_link/1: raises if the database type is not :document or :graph" do
+    Process.flag :trap_exit, true
+    Logger.remove_backend(:console, flush: true)
+
+    {{error, _}, _} = catch_exit(
+      MarcoPolo.start_link(user: "foo", password: "foo", connection: {:db, "foo", "doc"})
+    )
+
+    msg = ~s(unknown database type: "doc", valid ones are :document, :graph)
+    assert Exception.message(error) == msg
+
+    Logger.add_backend(:console, flush: true)
+  end
+
+  test "stop/1" do
+    {:ok, pid} = MarcoPolo.start_link(
+      user: TestHelpers.user,
+      password: TestHelpers.password,
+      connection: :server
+    )
+
+    assert Process.alive?(pid)
+
+    MarcoPolo.stop(pid)
+
+    assert_pid_will_die(pid)
+  end
+
+  defp assert_pid_will_die(pid) do
+    if Process.alive?(pid) do
+      :timer.sleep 20
+      assert_pid_will_die(pid)
+    else
+      refute Process.alive?(pid)
+    end
   end
 
   defmodule ConnectedToServer do
@@ -71,6 +108,7 @@ defmodule MarcoPoloTest do
     test "drop_db/3 with a non-existing database", %{conn: c} do
       expected = {"com.orientechnologies.orient.core.exception.OStorageException",
                   "Database with name 'Nonexistent' does not exist\r\n\tDB name=\"Nonexistent\""}
+
 
       assert {:error, %MarcoPolo.Error{} = err} = MarcoPolo.drop_db(c, "Nonexistent", :plocal)
       assert hd(err.errors) == expected
@@ -125,6 +163,7 @@ defmodule MarcoPoloTest do
       assert record.fields == %{"myString" => "record_load"}
     end
 
+    @tag min_orientdb_version: "2.1.0"
     test "load_record/4 using the :if_version_not_latest option", %{conn: c} do
       rid = TestHelpers.record_rid("record_load")
       assert {:ok, {nil, _}} = MarcoPolo.load_record(c, rid, version: 1, if_version_not_latest: true)
@@ -254,6 +293,14 @@ defmodule MarcoPoloTest do
       assert [{%RID{cluster_id: ^cluster_id}, v1}, {%RID{}, v2}] = created
       assert is_integer(v1)
       assert is_integer(v2)
+    end
+
+    test "transaction/3: updating/deleting a record with no :version raises", %{conn: c} do
+      doc = %MarcoPolo.Document{version: nil, rid: %MarcoPolo.RID{cluster_id: 1, position: 1}}
+
+      assert_raise MarcoPolo.Error, fn ->
+        MarcoPolo.transaction(c, [{:delete, doc}])
+      end
     end
 
     @tag :scripting

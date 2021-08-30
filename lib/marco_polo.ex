@@ -622,7 +622,7 @@ defmodule MarcoPolo do
         :sql_command -> "c"
       end
 
-    command_class_name = Protocol.encode_term(command_class_name)
+    command_class_name = Protocol.Types.encode(command_class_name)
 
     payload = encode_query_with_type(query_type, query, opts)
 
@@ -667,9 +667,9 @@ defmodule MarcoPolo do
   """
   @spec script(pid, String.t, String.t, Keyword.t) :: {:ok, term} | {:error, term}
   def script(conn, language, text, opts \\ []) do
-    command_class_name = Protocol.encode_term("s")
+    command_class_name = Protocol.Types.encode("s")
 
-    payload = [Protocol.encode_term(language),
+    payload = [Protocol.Types.encode(language),
                encode_query_with_type(:sql_command, text, opts)]
 
     args = [{:raw, "s"}, # synchronous mode
@@ -719,7 +719,7 @@ defmodule MarcoPolo do
   @spec transaction(pid, [tx_operation], Keyword.t) ::
     {:ok, %{created: [{RID.t, non_neg_integer}], updated: [{RID.t, non_neg_integer}]}} |
     {:error, term}
-  def transaction(conn, operations, opts \\ []) do
+  def transaction(conn, operations, opts \\ []) when is_list(operations) do
     {op_args, _index} = Enum.flat_map_reduce operations, -2, fn
       {:create, _} = op, i ->
         {args_from_tx_operation(op, i, opts), i - 1}
@@ -737,13 +737,111 @@ defmodule MarcoPolo do
     C.operation(conn, :tx_commit, args, opts)
   end
 
+  @doc """
+  Subscribes to a Live Query for the given `query`.
+
+  This function subscribes to a [Live
+  Query](https://orientdb.com/docs/last/Live-Query.html) for the given
+  `query`. Every time a change happens in the given query, a message will be
+  sent to `receiver`.
+
+  If the subscription is successful, this function returns `{:ok, token}` where
+  `token` is a unique identifier for the subscription to the give live
+  query. It's important to keep it around as it's needed to unsubscribe from the
+  live query (see `live_query_unsubscribe/2`).
+
+  The messages sent to `receiver` each time there's a change in the live query
+  has the following structure:
+
+      {:orientdb_live_query, token, {operation, record}}
+
+  where:
+
+    * `token` is the token mentioned above
+    * `operation` is one of `:create`, `:update`, or `:delete`, based on the
+      operation happened on the server
+    * `record` is the subject of the operation happened on the server
+
+  ## Options
+
+  This function accepts the following options:
+
+    * `:timeout` - operation timeout in milliseconds. If this timeout expires,
+      an exit signal will be sent to the calling process.
+
+  ## Examples
+
+      {:ok, token} = MarcoPolo.live_query(conn, "LIVE SELECT FROM Language", self())
+
+  Now, another client performs this query:
+
+      INSERT INTO Language(name, creators) VALUES ('Elixir', 'José Valim')
+
+  Back to the process that started the live query:
+
+      receive do
+        {:orientdb_live_query, ^token, {operation, record}} ->
+          operation #=> :create
+          record.fields["name"] #=> "Elixir"
+      end
+
+  """
+  @spec live_query(pid, String.t, pid, Keyword.t) :: {:ok, integer} | {:error, term}
+  def live_query(conn, query, receiver, opts \\ []) do
+    command_class_name = Protocol.Types.encode("q") # always a query, never a command
+
+    payload = Protocol.Types.encode_list [
+      query,
+      -1,
+      opts[:fetch_plan] || @default_fetch_plan,
+      %Document{fields: %{"params" => %{}}},
+    ]
+
+    args = [
+      {:raw, "l"}, # live query mode
+      IO.iodata_length([command_class_name, payload]),
+      {:raw, command_class_name},
+      {:raw, payload},
+    ]
+
+    C.live_query(conn, args, receiver, opts)
+  end
+
+  @doc """
+  Unsubscribes from the live query identified by `token`.
+
+  This function unsubscribes from the live query identified by `token` (see
+  `live_query/4`). Once an unsubscription from a live query happens, no more
+  messages will be sent to the receiver specified when the live query had been
+  started.
+
+  This operation happens asynchronously, hence it always returns `:ok`.
+
+  ## Examples
+
+      iex> MarcoPolo.live_query_unsubscribe(conn, token)
+      :ok
+
+  """
+  @spec live_query_unsubscribe(pid, integer) :: :ok
+  def live_query_unsubscribe(conn, token) when is_integer(token) do
+    string_token = Integer.to_string(token)
+
+    case command(conn, "LIVE UNSUBSCRIBE #{string_token}") do
+      {:ok, %{response: %Document{fields: %{"unsubscribed" => ^string_token}}}} ->
+        C.live_query_unsubscribe(conn, token)
+      o ->
+        o
+    end
+  end
+
   defp encode_query_with_type(:sql_query, query, opts) do
     args = [query,
             -1,
             opts[:fetch_plan] || @default_fetch_plan,
             %Document{class: nil, fields: %{"params" => to_params(opts[:params] || %{})}}]
 
-    Protocol.encode_list_of_terms(args)
+    Protocol.Types.encode_list(args)
   end
 
   defp encode_query_with_type(:sql_command, query, opts) do
@@ -759,7 +857,7 @@ defmodule MarcoPolo do
 
     args = args ++ [false]
 
-    Protocol.encode_list_of_terms(args)
+    Protocol.Types.encode_list(args)
   end
 
   defp refetching_schema(conn, fun) do
@@ -856,6 +954,10 @@ defmodule MarcoPolo do
   end
 
   defp args_from_tx_operation({:update, %{__struct__: _, rid: %RID{} = rid} = record}, _incr_position, opts) do
+    unless record.version do
+      raise MarcoPolo.Error, "missing :version in the record #{inspect record}"
+    end
+
     [
       {:raw, <<1>>}, # continue to read records
       {:raw, <<@tx_operation_types.update>>},
@@ -869,6 +971,10 @@ defmodule MarcoPolo do
   end
 
   defp args_from_tx_operation({:delete, %{__struct__: _, rid: %RID{} = rid} = record}, _incr_position, _opts) do
+    unless record.version do
+      raise MarcoPolo.Error, "missing :version in the record #{inspect record}"
+    end
+
     [
       {:raw, <<1>>}, # continue to read records
       {:raw, <<@tx_operation_types.delete>>},

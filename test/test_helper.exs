@@ -1,42 +1,51 @@
+supported_versions = ~w(2.0.13 2.1.0 2.2.35)
+
+excluded_versions =
+  case System.get_env("ORIENTDB_VERSION") do
+    version when is_binary(version) ->
+      supported_versions
+      |> Enum.filter(fn(v) -> Version.compare(v, version) == :gt end)
+      |> Enum.map(&{:min_orientdb_version, &1})
+    _ ->
+      []
+  end
+
 # Ignore scripting tests by default as scripting must be enabled manually in the
-# OrientDB server configuration.
-ExUnit.configure(exclude: (ExUnit.configuration[:exclude] || []) ++ [:scripting])
+# OrientDB server configuration. Same goes for Live Query.
+excludes = excluded_versions ++ [:scripting, :live_query]
+ExUnit.configure(exclude: (ExUnit.configuration[:exclude] || []) ++ excludes)
 
 ExUnit.start()
 
 unless :integration in ExUnit.configuration[:exclude] do
   unless System.get_env("ORIENTDB_USER") do
-    IO.puts IO.ANSI.format([:red, """
+    Mix.raise """
     The $ORIENTDB_USER variable is empty, but it needs to be set to an
     OrientDB admin username in order to run MarcoPolo tests.
-    """])
-    System.halt(1)
+    """
   end
 
   unless System.get_env("ORIENTDB_PASS") do
-    IO.puts IO.ANSI.format([:red, """
+    Mix.raise """
     The $ORIENTDB_PASS variable is empty, but it needs to be set to the
     password for the user specified in the $ORIENTDB_USER variable in order to
     run MarcoPolo tests.
-    """])
-    System.halt(1)
+    """
   end
 
   case :gen_tcp.connect('localhost', 2424, []) do
     {:ok, _} ->
       :ok
     {:error, reason} ->
-      msg = "Error connecting to OrientDB in test_helper.exs: #{:inet.format_error(reason)}"
-      IO.puts(:stderr, msg) && System.halt(1)
+      Mix.raise "Error connecting to OrientDB in test_helper.exs: #{:inet.format_error(reason)}"
   end
 
   clusters = []
   records  = []
 
   run_script = fn(script) ->
-    case System.cmd("orientdb-console", [script], stderr_to_stdout: true) do
       {lines, 0}   -> lines
-      {err, _status} -> raise """
+      {err, _status} -> Mix.raise """
       Database setup in test/test_helper.exs failed:
       #{err}
       """
