@@ -64,9 +64,7 @@ defmodule MarcoPolo.Protocol.RecordSerialization do
       {field_definitions, rest} ->
         {fields, rest} = decode_fields(rest, field_definitions, schema)
 
-        if class_name == "" do
-          class_name = nil
-        end
+        class_name = if class_name == "", do: nil, else: class_name
 
         {%Document{class: class_name, fields: fields}, rest}
       :unknown_property_id ->
@@ -254,7 +252,7 @@ defmodule MarcoPolo.Protocol.RecordSerialization do
     <<value :: big-size(value_size)-unit(8), rest :: binary>> = rest
 
     value = value / round(:math.pow(10, scale))
-    {Decimal.new(value), rest}
+    {Decimal.from_float(value), rest}
   end
 
   # 1 means "embedded" RidBag.
@@ -338,9 +336,7 @@ defmodule MarcoPolo.Protocol.RecordSerialization do
   end
 
   defp encode_embedded(%Document{class: class, fields: fields}, offset) do
-    if is_nil(class) do
-      class = ""
-    end
+    class = if is_nil(class), do: "", else: class
 
     encoded_class  = encode_value(class, offset)
     encoded_fields = encode_fields(fields, offset + IO.iodata_length(encoded_class))

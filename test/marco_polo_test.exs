@@ -230,7 +230,7 @@ defmodule MarcoPoloTest do
     end
 
     test "command/3: miscellaneous commands", %{conn: c} do
-      import MarcoPolo, only: [command: 2, command: 3]
+      import MarcoPolo, only: [command: 2]
 
       assert {:ok, %{}} = command(c, "CREATE CLUSTER misc_tests ID 100")
       assert {:ok, %{}} = command(c, "CREATE CLASS MiscTests CLUSTER 100")

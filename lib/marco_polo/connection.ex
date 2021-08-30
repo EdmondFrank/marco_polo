@@ -203,7 +203,7 @@ defmodule MarcoPolo.Connection do
 
   defp tcp_connection_opts(%{opts: opts} = _state) do
     socket_opts = @socket_opts ++ (opts[:socket_opts] || [])
-    {to_char_list(opts[:host]), opts[:port], socket_opts, opts[:timeout] || @timeout}
+    {to_charlist(opts[:host]), opts[:port], socket_opts, opts[:timeout] || @timeout}
   end
 
   defp parse_schema(%Document{fields: %{"globalProperties" => properties}}) do
@@ -290,11 +290,11 @@ defmodule MarcoPolo.Connection do
     tx_commit
   )a
 
-  defp do_check_op_is_allowed!({:db, _, _}, op) when not op in @db_ops do
+  defp do_check_op_is_allowed!({:db, _, _}, op) when op not in @db_ops do
     raise Error, "must be connected to the server (not a db) to perform operation #{op}"
   end
 
-  defp do_check_op_is_allowed!(:server, op) when not op in @server_ops do
+  defp do_check_op_is_allowed!(:server, op) when op not in @server_ops do
     raise Error, "must be connected to a database to perform operation #{op}"
   end
 

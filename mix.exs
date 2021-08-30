@@ -14,24 +14,24 @@ defmodule MarcoPolo.Mixfile do
       aliases: ["test.all": "test --include scripting --include integration"],
       preferred_cli_env: ["test.all": :test],
       test_coverage: [tool: Coverex.Task],
-      deps: deps
+      deps: deps()
     ]
   end
 
   def application do
     [
-      applications: [:logger],
+      applications: [:logger, :connection, :decimal],
       env: [supported_protocol: @supported_protocol]
     ]
   end
 
   defp deps do
     [
-      {:decimal, "~> 1.1.2"},
-      {:connection, "1.0.0"},
-      {:dialyze, "~> 0.2.0", only: :dev},
-      {:coverex, "~> 1.4", only: :test},
-      {:ex_doc, "~> 0.7", only: :docs}
+      {:decimal, "~> 1.9"},
+      {:connection, "~> 1.1"},
+      {:dialyze, "~> 0.2.1", only: :dev},
+      {:coverex, "~> 1.5", only: :test},
+      {:ex_doc, "~> 0.25", only: :docs}
     ]
   end
 end

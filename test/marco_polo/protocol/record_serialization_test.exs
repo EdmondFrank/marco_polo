@@ -60,7 +60,7 @@ defmodule MarcoPolo.Protocol.RecordSerializationTest do
 
   test "decode/2: record with no fields and null class" do
     assert Ser.decode(@record_no_fields_null_class) ==
-           %Document{class: ""}
+           %Document{class: nil}
   end
 
   test "decode/2: record with fields" do
@@ -189,14 +189,14 @@ defmodule MarcoPolo.Protocol.RecordSerializationTest do
   end
 
   test "decode_type/2: decimals" do
-    Decimal.set_context(%Decimal.Context{precision: 5})
+    Decimal.Context.set(%Decimal.Context{precision: 5})
 
     data = <<0, 0, 0, 4,   # scale as...4 bytes? why? :(
              0, 0, 0, 2,   # length of the value bytes as...4 bytes :(
              <<122, 183>>, # value (31415)
              "foo">>
 
-    assert decode_type(data, :decimal) == {Decimal.new(3.1415), "foo"}
+    assert decode_type(data, :decimal) == {Decimal.from_float(3.1415), "foo"}
   end
 
   test "decode_type/2: link bags (embedded)" do
