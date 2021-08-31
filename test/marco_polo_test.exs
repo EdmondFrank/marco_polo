@@ -122,8 +122,8 @@ defmodule MarcoPoloTest do
     setup do
       {:ok, conn} = MarcoPolo.start_link(
         connection: {:db, "MarcoPoloTest", :document},
-        user: "root",
-        password: "admin"
+        user: TestHelpers.user(),
+        password: TestHelpers.password()
       )
 
       on_exit fn -> MarcoPolo.stop(conn) end

@@ -44,6 +44,7 @@ unless :integration in ExUnit.configuration[:exclude] do
   records  = []
 
   run_script = fn(script) ->
+    case System.cmd("orientdb-console", [script], stderr_to_stdout: true) do
       {lines, 0}   -> lines
       {err, _status} -> Mix.raise """
       Database setup in test/test_helper.exs failed:
@@ -78,19 +79,22 @@ unless :integration in ExUnit.configuration[:exclude] do
     {name, extract_rid.(output)}
   end
 
+  user = System.get_env("ORIENTDB_USER")
+  password = System.get_env("ORIENTDB_PASS")
+
   run_script.("""
   SET ignoreErrors true;
-  DROP DATABASE remote:localhost/MarcoPoloTest root admin;
-  DROP DATABASE remote:localhost/MarcoPoloTestGenerated root admin;
-  DROP DATABASE remote:localhost/MarcoPoloToDrop root admin;
+  DROP DATABASE remote:localhost/MarcoPoloTest #{user} #{password};
+  DROP DATABASE remote:localhost/MarcoPoloTestGenerated #{user} #{password};
+  DROP DATABASE remote:localhost/MarcoPoloToDrop #{user} #{password};
   SET ignoreErrors false;
 
-  CREATE DATABASE remote:localhost/MarcoPoloTest root admin plocal;
-  CREATE DATABASE remote:localhost/MarcoPoloToDrop root admin memory;
+  CREATE DATABASE remote:localhost/MarcoPoloTest #{user} #{password} plocal;
+  CREATE DATABASE remote:localhost/MarcoPoloToDrop #{user} #{password} memory;
   """)
 
   output = run_script.("""
-  CONNECT remote:localhost/MarcoPoloTest admin admin;
+  CONNECT remote:localhost/MarcoPoloTest #{user} #{password};
   CREATE CLUSTER schemaless ID 200;
   CREATE CLASS Schemaless CLUSTER 200;
   """)
@@ -98,7 +102,7 @@ unless :integration in ExUnit.configuration[:exclude] do
   clusters = [{"schemaless", extract_cluster_id.(output)}|clusters]
 
   output = run_script.("""
-  CONNECT remote:localhost/MarcoPoloTest root admin;
+  CONNECT remote:localhost/MarcoPoloTest #{user} #{password};
   CREATE CLUSTER schemaful;
   CREATE CLASS Schemaful;
   CREATE PROPERTY Schemaful.myString STRING;
