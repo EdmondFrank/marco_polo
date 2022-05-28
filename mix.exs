@@ -42,7 +42,7 @@ defmodule MarcoPolo.Mixfile do
 
   defp deps do
     [
-      {:decimal, "~> 1.9"},
+      {:decimal, "~> 2.0"},
       {:connection, "~> 1.1"},
       {:dialyze, "~> 0.2.1", only: :dev},
       {:coverex, "~> 1.5", only: :test},
